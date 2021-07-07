@@ -6,8 +6,10 @@
 // @Description : main file of MINI-DNS
 //============================================================================
 #include "main.h"
-
-
+#pragma comment(lib, "ws2_32")
+int HASHSIZE=1000, CACHESIZE=100;
+struct Node *head, *tail;
+struct  HashNode* hashmap[1000], *cachemap[100];
 //============================================================================
 // Debugging functions.
 //============================================================================
@@ -32,7 +34,7 @@ void print_resource_record(struct ResourceRecord *rr)
         printf("  ResourceRecord { name '%s', type %u, class %u, ttl %u, rd_length %u, ",
                rr->name,
                rr->type,
-               rr->class,
+               rr->rclass,
                rr->ttl,
                rr->rd_length);
 
@@ -309,7 +311,7 @@ int decode_resource_records(struct ResourceRecord *rr, const uint8_t **buffer, c
     rr->name = decode_domain_name(buffer, *buffer - oriBuffer);
 
     rr->type = get16bits(buffer);
-    rr->class = get16bits(buffer);
+    rr->rclass = get16bits(buffer);
     rr->ttl = get32bits(buffer);
     rr->rd_length = get16bits(buffer);
     switch (rr->type)
@@ -326,7 +328,7 @@ int decode_resource_records(struct ResourceRecord *rr, const uint8_t **buffer, c
     {
         rr->rd_data.txt_record.txt_data_len = get8bits(buffer);
         uint8_t txt_len = rr->rd_data.txt_record.txt_data_len;
-        char txtData[txt_len + 1];
+        char *txtData=(char*)malloc((txt_len + 1)*sizeof(char));
         for (int i = 0; i < txt_len; ++i)
         {
             printf("%d ", i);
@@ -379,7 +381,7 @@ int encode_resource_records(struct ResourceRecord *rr, uint8_t **buffer)
         // Answer questions by attaching resource sections.
         encode_domain_name(buffer, rr->name);
         put16bits(buffer, rr->type);
-        put16bits(buffer, rr->class);
+        put16bits(buffer, rr->rclass);
         put32bits(buffer, rr->ttl);
         put16bits(buffer, rr->rd_length);
 
@@ -418,7 +420,7 @@ int decode_msg(struct Message *msg, const uint8_t *buffer, int size)
     // decode Question
     for (uint16_t i = 0; i < msg->qdCount; ++i)
     {
-        struct Question *q = malloc(sizeof(struct Question));
+        struct Question *q = (struct Question*)malloc(sizeof(struct Question));
 
         q->qName = decode_domain_name(&buffer, buffer - oriBuffer);
 
@@ -432,7 +434,7 @@ int decode_msg(struct Message *msg, const uint8_t *buffer, int size)
     // decode Answer
     for (uint16_t i = 0; i < msg->anCount; ++i)
     {
-        struct ResourceRecord *rr = malloc(sizeof(struct ResourceRecord));
+        struct ResourceRecord *rr = (struct ResourceRecord *)malloc(sizeof(struct ResourceRecord));
         decode_resource_records(rr, &buffer, oriBuffer);
         // if (decode_resource_records(rr, &buffer, oriBuffer) == -1)
         // return -1;
@@ -443,7 +445,7 @@ int decode_msg(struct Message *msg, const uint8_t *buffer, int size)
     // decode Authority
     for (uint16_t i = 0; i < msg->nsCount; ++i)
     {
-        struct ResourceRecord *rr = malloc(sizeof(struct ResourceRecord));
+        struct ResourceRecord *rr = (struct ResourceRecord*)malloc(sizeof(struct ResourceRecord));
         decode_resource_records(rr, &buffer, oriBuffer);
         // 添加到链表前端
         rr->next = msg->authorities;
@@ -499,7 +501,7 @@ int get_A_Record(uint8_t addr[4], const char domain_name[])
             printf("--Find '%s' in Cache.\n", domain_name);
         return 0;
     }
-    if (findInTable(addr, domain_name))
+    if (findNode(addr,domain_name,hashmap,HASHSIZE))
     { // then find domain name in table
         if (DEBUG)
             printf("--Find '%s' in Table.\n", domain_name);
@@ -538,12 +540,12 @@ int search_local(struct Message *msg)
     q = msg->questions;
     while (q)
     {
-        rr = malloc(sizeof(struct ResourceRecord));
+        rr = (struct ResourceRecord*)malloc(sizeof(struct ResourceRecord));
         memset(rr, 0, sizeof(struct ResourceRecord));
 
         rr->name = strdup(q->qName);
         rr->type = q->qType;
-        rr->class = q->qClass;
+        rr->rclass = q->qClass;
         rr->ttl = 60 * 60; // in seconds; 0 means no caching
 
         switch (q->qType)
@@ -666,7 +668,7 @@ void receive_from_client()
     struct Message msg;
     memset(&msg, 0, sizeof(struct Message));
 
-    nbytes = recvfrom(clientSock, buffer, sizeof(buffer), 0, (struct sockaddr *)&clientAddr, &addr_len);
+    nbytes = recvfrom(clientSock, (char *)buffer, sizeof(buffer), 0, (struct sockaddr *)&clientAddr, &addr_len);
 
     if (nbytes < 0 || decode_msg(&msg, buffer, nbytes) != 0)
     {
@@ -712,7 +714,7 @@ void receive_from_client()
             printf("(%d bytes)\n", buflen);
             // print_query(&msg);
         }
-        sendto(clientSock, buffer, buflen, 0, (struct sockaddr *)&clientAddr, addr_len);
+        sendto(clientSock, (char *)buffer, buflen, 0, (struct sockaddr *)&clientAddr, addr_len);
     }
     else
     { // -1: send to server
@@ -730,7 +732,7 @@ void receive_from_client()
                 printf("<<< SEND to Server %s:%d ", inet_ntoa(serverAddr.sin_addr), ntohs(serverAddr.sin_port));
                 printf("(%d bytes) [ID %x=>%x]\n", nbytes, clientId, nId);
             }
-            nbytes = sendto(serverSock, buffer, nbytes, 0, (struct sockaddr *)&serverAddr, sizeof(serverAddr));
+            nbytes = sendto(serverSock, (char *)buffer, nbytes, 0, (struct sockaddr *)&serverAddr, sizeof(serverAddr));
         }
     }
     if (msg.qdCount)
@@ -747,7 +749,7 @@ void receive_from_server()
     memset(&msg, 0, sizeof(struct Message));
 
     // server dns
-    nbytes = recvfrom(serverSock, buffer, sizeof(buffer), 0, (struct sockaddr *)&serverAddr, &addr_len);
+    nbytes = recvfrom(serverSock, (char *)buffer, sizeof(buffer), 0, (struct sockaddr *)&serverAddr, &addr_len);
     if (nbytes < 0 || decode_msg(&msg, buffer, nbytes) != 0)
     {
         return;
@@ -787,7 +789,7 @@ void receive_from_server()
         printf("<<< SEND to Client %s:%d ", inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
         printf("(%d bytes) [ID %x=>%x]\n", nbytes, nId, ntohs(clientId));
     }
-    sendto(clientSock, buffer, nbytes, 0, (struct sockaddr *)&ca, sizeof(ca));
+    sendto(clientSock, (char *)buffer, nbytes, 0, (struct sockaddr *)&ca, sizeof(ca));
 
     // save A type to cache
     if (msg.anCount)
@@ -800,8 +802,8 @@ void receive_from_server()
                 char *domain_name = rr->name;
                 uint8_t *addr = rr->rd_data.a_record.addr;
                 updateCache(addr, domain_name);
-                if (DEBUG)
-                    printCache();
+               // if (DEBUG)
+                   // printCache();
             }
             rr = rr->next;
         }
@@ -878,16 +880,11 @@ void parsing_parameters(int argc, char *argv[])
 
 void init_data_structure()
 {
-    // init Trie
-    cacheTrie = (struct Trie *)malloc(sizeof(struct Trie));
-    tableTrie = (struct Trie *)malloc(sizeof(struct Trie));
-    cacheTrie->totalNode = 0;
-    tableTrie->totalNode = 0;
-    cacheSize = 0;
+
 
     // read dnsrelay.txt
-    char domain[maxStr] = {0};
-    char ipAddr[maxStr] = {0};
+    char domain[1001] = {0};
+    char ipAddr[1001] = {0};
 
     FILE *fp = NULL;
     if ((fp = fopen(DNS_TABLE_FILE, "r")) == NULL)
@@ -900,8 +897,8 @@ void init_data_structure()
     {
         fscanf(fp, "%s", ipAddr);
         fscanf(fp, "%s", domain);
-        transIp(ip, ipAddr);
-        insertNode(tableTrie, domain, ip);
+        //transIp(ip, ipAddr);
+        install(domain,ipAddr,hashmap,HASHSIZE);
     }
 
     // init LRU

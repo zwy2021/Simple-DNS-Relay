@@ -10,7 +10,8 @@
 #include <WinSock2.h>
 #include <windows.h>
 #include <getopt.h>
-#include "trie.h"
+#include "lru.h"
+#include "hashmap.h"
 
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 
@@ -186,7 +187,7 @@ struct ResourceRecord
 {
     char *name;
     uint16_t type;
-    uint16_t class;
+    uint16_t rclass;
     uint32_t ttl;
     uint16_t rd_length;
     union ResourceData rd_data;
