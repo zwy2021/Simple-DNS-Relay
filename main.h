@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,7 +11,7 @@
 #include <WinSock2.h>
 #include <windows.h>
 #include <getopt.h>
-#include "trie.h"
+#include "hashmap.h"
 
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 
@@ -23,7 +24,7 @@
 
 char PUBLIC_DNS_IP[16] = "10.3.9.4"; // 北邮DNS服务器，用校园网时因AP隔离两台主机无法通信
 // char PUBLIC_DNS_IP[16] = "192.168.43.1"; // 手机热点
-char DNS_TABLE_FILE[100] = "./dnsrelay.txt";
+char DNS_TABLE_FILE[100] = "C:\\Users\\dsw\\CLionProjects\\dns\\dnsrelay.txt";
 int PORT = 53;
 bool DEBUG = false;
 bool LOG = true;
@@ -186,7 +187,7 @@ struct ResourceRecord
 {
     char *name;
     uint16_t type;
-    uint16_t class;
+    uint16_t rclass;
     uint32_t ttl;
     uint16_t rd_length;
     union ResourceData rd_data;
